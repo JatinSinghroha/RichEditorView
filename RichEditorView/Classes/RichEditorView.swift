@@ -594,4 +594,10 @@ extension RichEditorView: WKNavigationDelegate {
             decisionHandler(.allow)
         }
     }
+    
+    public func webView(_ webView: WKWebView,
+                        didFail navigation: WKNavigation!,
+                        withError error: Error) {
+        print(error)
+    }
 }
