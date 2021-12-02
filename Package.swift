@@ -20,14 +20,11 @@ let package = Package(
     ],
     targets: [
         .target(
-            name: "RichEditorView",
-            dependencies: [],
-            resources: [.process("Resources")]
+            name: "RichEditorView"
         ),
         .testTarget(
             name: "RichEditorViewTests",
-            dependencies: ["RichEditorView"],
-            resources: [.process("Resources")]
+            dependencies: ["RichEditorView"]
         ),
     ]
 )
