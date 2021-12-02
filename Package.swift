@@ -22,7 +22,6 @@ let package = Package(
         .target(
             name: "RichEditorView",
             dependencies: [],
-            path: "Sources",
             resources: [.process("Resources")]
         ),
         .testTarget(
