@@ -7,12 +7,27 @@ import PackageDescription
 let package = Package(
     name: "RichEditorView",
     platforms: [
-         .iOS(.v11)
+        .iOS(.v13)
     ],
     products: [
-        .library(name: "RichEditorView", targets: ["RichEditorView"])
+        // Products define the executables and libraries a package produces, and make them visible to other packages.
+        .library(
+            name: "RichEditorView",
+            targets: ["RichEditorView"]),
+    ],
+    dependencies: [
+        // .package(url: /* package url */, from: "1.0.0"),
     ],
     targets: [
-        .target(name: "RichEditorView", path: "RichEditorViewSample")
+        .target(
+            name: "RichEditorView",
+            dependencies: [],
+            resources: [.process("Resources")]
+        ),
+        .testTarget(
+            name: "RichEditorViewTests",
+            dependencies: ["RichEditorView"],
+            resources: [.process("Resources")]
+        ),
     ]
 )
