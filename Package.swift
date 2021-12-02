@@ -2,6 +2,8 @@
 //  Package.swift
 //  RichEditorView
 //
+// swift-tools-version:5.2
+
 //  Created by Paresh Mittal on 02/12/21.
 //
 
