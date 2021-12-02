@@ -1,11 +1,8 @@
 //
 //  Package.swift
 //  RichEditorView
-//
-// swift-tools-version:5.2
-
-//  Created by Paresh Mittal on 02/12/21.
-//
+// swift-tools-version:5.3
+// The swift-tools-version declares the minimum version of Swift required to build this package.
 
 
 import PackageDescription
