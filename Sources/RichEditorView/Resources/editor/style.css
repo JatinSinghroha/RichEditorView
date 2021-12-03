@@ -16,10 +16,6 @@
 
 @charset "UTF-8";
 
-:root {
-    color-scheme: light dark;
-}
-
 html {
     height: 100%;
 }
@@ -27,10 +23,9 @@ html {
 body {
     min-height: 100%;
     overflow: auto;
-    font: -apple-system-body;
 }
 
-body, h1, p, ul, ol {
+body, h1, p {
     margin: 0;
 }
 
@@ -48,11 +43,6 @@ div {
     outline: 0px solid transparent;
 }
 
-@media (prefers-color-scheme: dark) {
-    body, #editor {
-    }
-}
-
 .placeholder[placeholder]:after {
     content: attr(placeholder);
     position: absolute;
@@ -65,20 +55,7 @@ div {
     height: 100%;
     overflow: auto;
     display: block;
+    font-family: 'HelveticaNeue';
+    color:#666666;
     font-size: 12pt;
 }
-
-input[type=checkbox] {
-    transform: scale(1.4);
-    margin-right: 9px;
-}
-
-video {
-    width: 100%  !important;
-    height: auto !important;
-}
-
-table {overflow-x: scroll;}
-th, td {max-width: 200px; min-width:50px;}
-table, td, th{border-collapse:collapse; border:1px solid #777;}
-td{padding:5px 10px; height:35px;}

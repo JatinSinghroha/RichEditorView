@@ -5,9 +5,10 @@
 //  Created by Caesar Wirth on 10/9/16.
 //
 //
+
 import UIKit
 
-extension UIColor {
+internal extension UIColor {
 
     /// Hexadecimal representation of the UIColor.
     /// For example, UIColor.blackColor() becomes "#000000".
@@ -24,4 +25,5 @@ extension UIColor {
         let str = String(format: "#%02x%02x%02x", r, g, b)
         return str
     }
+
 }

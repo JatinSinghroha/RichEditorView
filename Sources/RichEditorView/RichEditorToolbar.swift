@@ -4,6 +4,7 @@
 //  Created by Caesar Wirth on 4/2/15.
 //  Copyright (c) 2015 Caesar Wirth. All rights reserved.
 //
+
 import UIKit
 
 /// RichEditorToolbarDelegate is a protocol for the RichEditorToolbar.
@@ -19,14 +20,8 @@ import UIKit
     /// Called when the Insert Image toolbar item is pressed.
     @objc optional func richEditorToolbarInsertImage(_ toolbar: RichEditorToolbar)
 
-    /// Called when the Insert Video toolbar item is pressed
-    @objc optional func richEditorToolbarInsertVideo(_ toolbar: RichEditorToolbar)
-
     /// Called when the Insert Link toolbar item is pressed.
     @objc optional func richEditorToolbarInsertLink(_ toolbar: RichEditorToolbar)
-    
-    /// Called when the Insert Table toolbar item is pressed
-    @objc optional func richEditorToolbarInsertTable(_ toolbar: RichEditorToolbar)
 }
 
 /// RichBarButtonItem is a subclass of UIBarButtonItem that takes a callback as opposed to the target-action pattern
@@ -34,17 +29,31 @@ import UIKit
     open var actionHandler: (() -> Void)?
     
     public convenience init(image: UIImage? = nil, handler: (() -> Void)? = nil) {
-        self.init(image: image, style: .plain, target: nil, action: nil)
+        let button = UIButton(type: .system)
+        self.init(customView: button)
         target = self
         action = #selector(RichBarButtonItem.buttonWasTapped)
         actionHandler = handler
+        button.setImage(image, for: .normal)
+        button.addTarget(self, action: #selector(RichBarButtonItem.buttonWasTapped), for: .touchUpInside)
     }
     
     public convenience init(title: String = "", handler: (() -> Void)? = nil) {
-        self.init(title: title, style: .plain, target: nil, action: nil)
+        let button = UIButton(type: .system)
+        button.setTitle(title, for: .normal)
+        self.init(customView: button)
         target = self
         action = #selector(RichBarButtonItem.buttonWasTapped)
         actionHandler = handler
+        button.addTarget(self, action: #selector(RichBarButtonItem.buttonWasTapped), for: .touchUpInside)
+    }
+
+    public convenience init(button: UIButton, handler: (() -> Void)? = nil) {
+        self.init(customView: button)
+        target = self
+        action = #selector(RichBarButtonItem.buttonWasTapped)
+        actionHandler = handler
+        button.addTarget(self, action: #selector(RichBarButtonItem.buttonWasTapped), for: .touchUpInside)
     }
     
     @objc func buttonWasTapped() {
@@ -73,6 +82,8 @@ import UIKit
         get { return backgroundToolbar.barTintColor }
         set { backgroundToolbar.barTintColor = newValue }
     }
+
+    open var moveItemsToRight: Bool = false
 
     private var toolbarScroll: UIScrollView
     private var toolbar: UIToolbar
@@ -128,34 +139,86 @@ import UIKit
                 }
             }
 
-            if let image = option.image {
+            if let button = option.button {
+                let richBarButtonItem = RichBarButtonItem(button: button, handler: handler)
+                richBarButtonItem.tag = option.tag
+                buttons.append(richBarButtonItem)
+            }
+            else if let image = option.image {
                 let button = RichBarButtonItem(image: image, handler: handler)
+                button.tag = option.tag
                 buttons.append(button)
             } else {
                 let title = option.title
                 let button = RichBarButtonItem(title: title, handler: handler)
+                button.tag = option.tag
                 buttons.append(button)
             }
+            buttons.append(UIBarButtonItem(barButtonSystemItem: .flexibleSpace, target: nil, action: nil))
+        }
+        if !buttons.isEmpty {
+            buttons.removeLast()
+        }
+        if moveItemsToRight {
+            buttons.insert(UIBarButtonItem(barButtonSystemItem: .flexibleSpace, target: nil, action: nil), at: 0)
         }
         toolbar.items = buttons
 
         let defaultIconWidth: CGFloat = 28
-        let barButtonItemMargin: CGFloat = 12
-        let width: CGFloat = buttons.reduce(0) {sofar, new in
-            if let view = new.value(forKey: "view") as? UIView {
-                return sofar + view.frame.size.width + barButtonItemMargin
+        let barButtonItemMargin: CGFloat = 0
+        let width: CGFloat = buttons.reduce(0) {sofar, barButtonItem in
+            if let button = barButtonItem.customView as? UIButton, let image = button.imageView?.image {
+                return sofar + (image.size.width + barButtonItemMargin)
+            } else if let button = barButtonItem.customView as? UIButton, let titleLabel = button.titleLabel {
+                titleLabel.sizeToFit()
+                return sofar + (titleLabel.frame.width + barButtonItemMargin)
             } else {
                 return sofar + (defaultIconWidth + barButtonItemMargin)
             }
         }
         
         if width < frame.size.width {
-            toolbar.frame.size.width = frame.size.width + barButtonItemMargin
+            toolbar.frame.size.width = frame.size.width
         } else {
-            toolbar.frame.size.width = width + barButtonItemMargin
+            toolbar.frame.size.width = width
         }
         toolbar.frame.size.height = 44
         toolbarScroll.contentSize.width = width
     }
     
+    public func setTintColor(color: UIColor, toTag tag: Int) {
+        guard let items = toolbar.items else {
+            return
+        }
+        
+        for item in items where item.tag == tag {
+            guard let customButton = item.customView as? UIButton else { continue }
+            customButton.tintColor = color
+            return
+        }
+    }
+
+    public func setImage(image: UIImage, toTag tag: Int) {
+        guard let items = toolbar.items else {
+            return
+        }
+
+        for item in items where item.tag == tag {
+            guard let customButton = item.customView as? UIButton else { continue }
+            customButton.setImage(image, for: .normal)
+            return
+        }
+    }
+
+    public func setEnabled(enabled: Bool, toTag tag: Int) {
+        guard let items = toolbar.items else {
+            return
+        }
+
+        for item in items where item.tag == tag {
+            guard let customButton = item.customView as? UIButton else { continue }
+            customButton.isEnabled = enabled
+            return
+        }
+    }
 }

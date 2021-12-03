@@ -4,6 +4,7 @@
 //  Created by Caesar Wirth on 4/2/15.
 //  Copyright (c) 2015 Caesar Wirth. All rights reserved.
 //
+
 import UIKit
 
 /// A RichEditorOption object is an object that can be displayed in a RichEditorToolbar.
@@ -13,9 +14,13 @@ public protocol RichEditorOption {
     /// The image to be displayed in the RichEditorToolbar.
     var image: UIImage? { get }
 
+    var button: UIButton? { get }
+
     /// The title of the item.
     /// If `image` is nil, this will be used for display in the RichEditorToolbar.
     var title: String { get }
+    
+    var tag: Int { get }
 
     /// The action to be evoked when the action is tapped
     /// - parameter editor: The RichEditorToolbar that the RichEditorOption was being displayed in when tapped.
@@ -30,15 +35,27 @@ public struct RichEditorOptionItem: RichEditorOption {
     /// The image that should be shown when displayed in the RichEditorToolbar.
     public var image: UIImage?
 
+    public var button: UIButton?
+
     /// If an `itemImage` is not specified, this is used in display
     public var title: String
+    
+    public var tag: Int
 
     /// The action to be performed when tapped
     public var handler: ((RichEditorToolbar) -> Void)
 
-    public init(image: UIImage?, title: String, action: @escaping ((RichEditorToolbar) -> Void)) {
+    public init(image: UIImage?, title: String, tag: Int, action: @escaping ((RichEditorToolbar) -> Void)) {
         self.image = image
         self.title = title
+        self.tag = tag
+        self.handler = action
+    }
+
+    public init(button: UIButton?, title: String, tag: Int, action: @escaping ((RichEditorToolbar) -> Void)) {
+        self.button = button
+        self.title = title
+        self.tag = tag
         self.handler = action
     }
     
@@ -57,11 +74,10 @@ public enum RichEditorDefaultOption: RichEditorOption {
     case redo
     case bold
     case italic
-    case underline
-    case checkbox
     case `subscript`
     case superscript
     case strike
+    case underline
     case textColor
     case textBackgroundColor
     case header(Int)
@@ -73,22 +89,24 @@ public enum RichEditorDefaultOption: RichEditorOption {
     case alignCenter
     case alignRight
     case image
-    case video
     case link
-    case table
     
     public static let all: [RichEditorDefaultOption] = [
-        //.clear,
-        //.undo, .redo,
-        .bold, .italic, .underline,
-        .checkbox, .subscript, .superscript, .strike,
+        .clear,
+        .undo, .redo, .bold, .italic,
+        .subscript, .superscript, .strike, .underline,
         .textColor, .textBackgroundColor,
         .header(1), .header(2), .header(3), .header(4), .header(5), .header(6),
         .indent, outdent, orderedList, unorderedList,
-        .alignLeft, .alignCenter, .alignRight, .image, .video, .link, .table
+        .alignLeft, .alignCenter, .alignRight, .image, .link
     ]
 
     // MARK: RichEditorOption
+
+    public var button: UIButton? {
+        return nil
+    }
+
     public var image: UIImage? {
         var name = ""
         switch self {
@@ -97,11 +115,10 @@ public enum RichEditorDefaultOption: RichEditorOption {
         case .redo: name = "redo"
         case .bold: name = "bold"
         case .italic: name = "italic"
-        case .underline: name = "underline"
-        case .checkbox: name = "checkbox"
         case .subscript: name = "subscript"
         case .superscript: name = "superscript"
         case .strike: name = "strikethrough"
+        case .underline: name = "underline"
         case .textColor: name = "text_color"
         case .textBackgroundColor: name = "bg_color"
         case .header(let h): name = "h\(h)"
@@ -113,12 +130,11 @@ public enum RichEditorDefaultOption: RichEditorOption {
         case .alignCenter: name = "justify_center"
         case .alignRight: name = "justify_right"
         case .image: name = "insert_image"
-        case .video: name = "insert_video"
         case .link: name = "insert_link"
-        case .table: name = "insert_table"
         }
         
-        return UIImage(named: name, in: .module, compatibleWith: nil)
+        let bundle = Bundle(for: RichEditorToolbar.self)
+        return UIImage(named: name, in: bundle, compatibleWith: nil)
     }
     
     public var title: String {
@@ -128,11 +144,10 @@ public enum RichEditorDefaultOption: RichEditorOption {
         case .redo: return NSLocalizedString("Redo", comment: "")
         case .bold: return NSLocalizedString("Bold", comment: "")
         case .italic: return NSLocalizedString("Italic", comment: "")
-        case .underline: return NSLocalizedString("Underline", comment: "")
-        case .checkbox: return NSLocalizedString("Checkbox", comment: "")
         case .subscript: return NSLocalizedString("Sub", comment: "")
         case .superscript: return NSLocalizedString("Super", comment: "")
         case .strike: return NSLocalizedString("Strike", comment: "")
+        case .underline: return NSLocalizedString("Underline", comment: "")
         case .textColor: return NSLocalizedString("Color", comment: "")
         case .textBackgroundColor: return NSLocalizedString("BG Color", comment: "")
         case .header(let h): return NSLocalizedString("H\(h)", comment: "")
@@ -144,9 +159,33 @@ public enum RichEditorDefaultOption: RichEditorOption {
         case .alignCenter: return NSLocalizedString("Center", comment: "")
         case .alignRight: return NSLocalizedString("Right", comment: "")
         case .image: return NSLocalizedString("Image", comment: "")
-        case .video: return NSLocalizedString("Video", comment: "")
         case .link: return NSLocalizedString("Link", comment: "")
-        case .table: return NSLocalizedString("Table", comment: "")
+        }
+    }
+    
+    public var tag: Int {
+        switch self {
+        case .clear: return 1
+        case .undo: return 2
+        case .redo: return 3
+        case .bold: return 4
+        case .italic: return 5
+        case .subscript: return 6
+        case .superscript: return 7
+        case .strike: return 8
+        case .underline: return 9
+        case .textColor: return 10
+        case .textBackgroundColor: return 11
+        case .header(let h): return (20 + h)
+        case .indent: return 12
+        case .outdent: return 13
+        case .orderedList: return 14
+        case .unorderedList: return 15
+        case .alignLeft: return 16
+        case .alignCenter: return 17
+        case .alignRight: return 18
+        case .image: return 19
+        case .link: return 20
         }
     }
     
@@ -157,11 +196,10 @@ public enum RichEditorDefaultOption: RichEditorOption {
         case .redo: toolbar.editor?.redo()
         case .bold: toolbar.editor?.bold()
         case .italic: toolbar.editor?.italic()
-        case .underline: toolbar.editor?.underline()
-        case .checkbox: toolbar.editor?.checkbox()
         case .subscript: toolbar.editor?.subscriptText()
         case .superscript: toolbar.editor?.superscript()
         case .strike: toolbar.editor?.strikethrough()
+        case .underline: toolbar.editor?.underline()
         case .textColor: toolbar.delegate?.richEditorToolbarChangeTextColor?(toolbar)
         case .textBackgroundColor: toolbar.delegate?.richEditorToolbarChangeBackgroundColor?(toolbar)
         case .header(let h): toolbar.editor?.header(h)
@@ -173,9 +211,7 @@ public enum RichEditorDefaultOption: RichEditorOption {
         case .alignCenter: toolbar.editor?.alignCenter()
         case .alignRight: toolbar.editor?.alignRight()
         case .image: toolbar.delegate?.richEditorToolbarInsertImage?(toolbar)
-        case .video: toolbar.delegate?.richEditorToolbarInsertVideo?(toolbar)
         case .link: toolbar.delegate?.richEditorToolbarInsertLink?(toolbar)
-        case .table: toolbar.delegate?.richEditorToolbarInsertTable?(toolbar)
         }
     }
 }

@@ -1,22 +1,22 @@
 //
-//  RichEditorView.swift
+//  RichEditor.swift
 //
-//  Created by YoomamaFTW on 11/20/19.
-//  Copyright © 2019 YoomamaFTW. All rights reserved.
+//  Created by Caesar Wirth on 4/1/15.
+//  Copyright (c) 2015 Caesar Wirth. All rights reserved.
 //
 
-import UIKit
 import WebKit
 
 /// RichEditorDelegate defines callbacks for the delegate of the RichEditorView
-@objc public protocol RichEditorDelegate: class {
+@objc public protocol RichEditorDelegate: AnyObject {
+
     /// Called when the inner height of the text being displayed changes
     /// Can be used to update the UI
     @objc optional func richEditor(_ editor: RichEditorView, heightDidChange height: Int)
-    
+
     /// Called whenever the content inside the view changes
     @objc optional func richEditor(_ editor: RichEditorView, contentDidChange content: String)
-    
+
     /// Called when the rich editor starts editing
     @objc optional func richEditorTookFocus(_ editor: RichEditorView)
     
@@ -36,45 +36,44 @@ import WebKit
     @objc optional func richEditor(_ editor: RichEditorView, handle action: String)
 }
 
-/// The value we hold in order to be able to set the line height before the JS completely loads.
-private let DefaultInnerLineHeight: Int = 28
-
-public class RichEditorWebView: WKWebView {
-    public var accessoryView: UIView?
-    public override var inputAccessoryView: UIView? {
-        return accessoryView
-    }
-}
-
 /// RichEditorView is a UIView that displays richly styled text, and allows it to be edited in a WYSIWYG fashion.
-@objcMembers open class RichEditorView: UIView, UIScrollViewDelegate, WKNavigationDelegate, UIGestureRecognizerDelegate {
+@objcMembers open class RichEditorView: UIView, UIScrollViewDelegate, UIGestureRecognizerDelegate {
+
+    // MARK: Public Properties
+
     /// The delegate that will receive callbacks when certain actions are completed.
     open weak var delegate: RichEditorDelegate?
-    
+
     /// Input accessory view to display over they keyboard.
     /// Defaults to nil
     open override var inputAccessoryView: UIView? {
-        get { return webView.accessoryView }
-        set { webView.accessoryView = newValue }
+        get { return webView.getCustomInputAccessoryView() }
+        set { webView.addInputAccessoryView(toolbar: newValue) }
     }
-    
+
     /// The internal WKWebView that is used to display the text.
-    open private(set) var webView: RichEditorWebView
-    
+    open private(set) var webView: WKWebView!
+
     /// Whether or not scroll is enabled on the view.
     open var isScrollEnabled: Bool = true {
         didSet {
             webView.scrollView.isScrollEnabled = isScrollEnabled
         }
     }
-    
+
     /// Whether or not to allow user input in the view.
-    open var editingEnabled: Bool = false {
-        didSet { contentEditable = editingEnabled }
+    open var isEditingEnabled: Bool {
+        get { return isContentEditable }
+        set { isContentEditable = newValue }
     }
-    
-    private let tapRecognizer = UITapGestureRecognizer()
-    
+
+    open var editingTextColor: String = "666666" {
+        didSet {
+            if webView != nil {
+                loadHTML(colorHex: editingTextColor)
+            }
+        }
+    }
     /// The content HTML of the text being displayed.
     /// Is continually updated as the text is being edited.
     open private(set) var contentHTML: String = "" {
@@ -82,7 +81,7 @@ public class RichEditorWebView: WKWebView {
             delegate?.richEditor?(self, contentDidChange: contentHTML)
         }
     }
-    
+
     /// The internal height of the text being displayed.
     /// Is continually being updated as the text is edited.
     open private(set) var editorHeight: Int = 0 {
@@ -90,29 +89,134 @@ public class RichEditorWebView: WKWebView {
             delegate?.richEditor?(self, heightDidChange: editorHeight)
         }
     }
-    
+
+    /// The value we hold in order to be able to set the line height before the JS completely loads.
+    private var innerLineHeight: Int = 28
+
     /// The line height of the editor. Defaults to 28.
-    open private(set) var lineHeight: Int = DefaultInnerLineHeight {
-        didSet {
-            runJS("RE.setLineHeight('\(lineHeight)px')")
+    open private(set) var lineHeight: Int {
+        get {
+            if isEditorLoaded, let lineHeight = Int(runJS("RE.getLineHeight();")) {
+                return lineHeight
+            } else {
+                return innerLineHeight
+            }
+        }
+        set {
+            innerLineHeight = newValue
+            runJS("RE.setLineHeight('\(innerLineHeight)px');")
         }
     }
-    
+
+    // MARK: Private Properties
+
     /// Whether or not the editor has finished loading or not yet.
     private var isEditorLoaded = false
-    
+
     /// Value that stores whether or not the content should be editable when the editor is loaded.
     /// Is basically `isEditingEnabled` before the editor is loaded.
     private var editingEnabledVar = true
-        
-    /// The HTML that is currently loaded in the editor view, if it is loaded. If it has not been loaded yet, it is the
-    /// HTML that will be loaded into the editor view once it finishes initializing.
-    public var html: String = "" {
-        didSet {
-            setHTML(html)
-        }
+
+    /// The private internal tap gesture recognizer used to detect taps and focus the editor
+    private let tapRecognizer = UITapGestureRecognizer()
+
+    /// The inner height of the editor div.
+    /// Fetches it from JS every time, so might be slow!
+    private var clientHeight: Int {
+        let heightString = runJS("document.getElementById('editor').clientHeight;")
+        return Int(heightString) ?? 0
+    }
+
+    // MARK: Initialization
+    
+    public override init(frame: CGRect) {
+        super.init(frame: frame)
+        setup()
+    }
+
+    required public init?(coder aDecoder: NSCoder) {
+        super.init(coder: aDecoder)
+        setup()
     }
     
+    private func setup() {
+        let jScript = "var meta = document.createElement('meta'); meta.setAttribute('name', 'viewport'); meta.setAttribute('content', 'width=device-width'); document.getElementsByTagName('head')[0].appendChild(meta);";
+
+        let wkUScript = WKUserScript(source: jScript, injectionTime: .atDocumentEnd, forMainFrameOnly: true)
+        let wkUController = WKUserContentController()
+        wkUController.addUserScript(wkUScript)
+
+        let configuration = WKWebViewConfiguration()
+        configuration.userContentController = wkUController
+        if #available(iOS 10.0, *) {
+            configuration.dataDetectorTypes = .all
+        }
+        
+        webView = WKWebView(frame: bounds, configuration: configuration)
+        webView.setKeyboardRequiresUserInteraction(false)
+        
+        webView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        webView.navigationDelegate = self
+        webView.scrollView.isScrollEnabled = isScrollEnabled
+        webView.scrollView.bounces = false
+        webView.scrollView.delegate = self
+        webView.scrollView.clipsToBounds = false
+                
+        addSubview(webView)
+        
+        loadHTML(colorHex: editingTextColor)
+
+        tapRecognizer.addTarget(self, action: #selector(viewWasTapped))
+        tapRecognizer.delegate = self
+        addGestureRecognizer(tapRecognizer)
+    }
+
+    // MARK: - Rich Text Editing
+    private func loadHTML(colorHex: String? = nil) {
+        if let filePath = Bundle(for: RichEditorView.self).path(forResource: "rich_editor", ofType: "html") {
+            let url = URL(fileURLWithPath: filePath, isDirectory: false)
+            do {
+                var string = try String(contentsOf: url)
+                var textColor: String = "666666"
+                if let colorHex = colorHex, !colorHex.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines).isEmpty {
+                    var colorString = colorHex
+                    if colorString.hasPrefix("#") {
+                        colorString = String(colorString.dropFirst())
+                    }
+                    if colorString.count == 6 {
+                        textColor = colorString
+                    }
+                }
+                string = string.replacingOccurrences(of: "{RTE_EDITING_COLOR}", with: textColor)
+                webView.loadHTMLString(string, baseURL: url)
+            } catch {
+                print(error)
+            }
+        }
+    }
+
+    // MARK: Properties
+
+    /// The HTML that is currently loaded in the editor view, if it is loaded. If it has not been loaded yet, it is the
+    /// HTML that will be loaded into the editor view once it finishes initializing.
+    public var html: String {
+        get {
+            return runJS("RE.getHtml();")
+        }
+        set {
+            contentHTML = newValue
+            if isEditorLoaded {
+                runJS("RE.setHtml('\(newValue.escaped)');")
+                updateHeight()
+            }
+        }
+    }
+
+    /// Text representation of the data that has been input into the editor view, if it has been loaded.
+    public var text: String {
+        return runJS("RE.getText()")
+    }
+
     /// Private variable that holds the placeholder text, so you can set the placeholder before the editor loads.
     private var placeholderText: String = ""
     /// The placeholder text that should be shown when there is no user input.
@@ -120,402 +224,209 @@ public class RichEditorWebView: WKWebView {
         get { return placeholderText }
         set {
             placeholderText = newValue
-            if isEditorLoaded {
-                runJS("RE.setPlaceholderText('\(newValue.escaped)')")
-            }
+            runJS("RE.setPlaceholderText('\(newValue.escaped)');")
         }
     }
-    
-    // MARK: Initialization
-    
-    public override init(frame: CGRect) {
-        webView = RichEditorWebView()
-        super.init(frame: frame)
-        setup()
-    }
-    
-    required public init?(coder aDecoder: NSCoder) {
-        webView = RichEditorWebView()
-        super.init(coder: aDecoder)
-        setup()
-    }
-    
-    private func setup() {
-        // configure webview
-        webView.frame = bounds
-        webView.navigationDelegate = self
-        webView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-        webView.configuration.dataDetectorTypes = WKDataDetectorTypes()
-        
-        webView.scrollView.isScrollEnabled = isScrollEnabled
-        webView.scrollView.showsHorizontalScrollIndicator = false
-        webView.scrollView.bounces = false
-        webView.scrollView.delegate = self
-        webView.scrollView.clipsToBounds = false
-        addSubview(webView)
-        
-        if let filePath = Bundle.module.url(forResource: "rich_editor", withExtension: "html") {
-            webView.loadFileURL(filePath, allowingReadAccessTo: filePath.deletingLastPathComponent())
-        }
-        
-        tapRecognizer.addTarget(self, action: #selector(viewWasTapped))
-        tapRecognizer.delegate = self
-        addGestureRecognizer(tapRecognizer)
-    }
-    
-    // MARK: - Rich Text Editing
-    
-    open func isEditingEnabled(handler: @escaping (Bool) -> Void) {
-        isContentEditable(handler: handler)
-    }
-    
-    private func getLineHeight(handler: @escaping (Int) -> Void) {
-        if isEditorLoaded {
-            runJS("RE.getLineHeight()") { r in
-                if let r = Int(r) {
-                    handler(r)
-                } else {
-                    handler(DefaultInnerLineHeight)
-                }
-            }
-        } else {
-            handler(DefaultInnerLineHeight)
-        }
-    }
-    
-    private func setHTML(_ value: String) {
-        if isEditorLoaded {
-            runJS("RE.setHtml('\(value.escaped)')") { _ in
-                self.updateHeight()
-            }
-        }
-    }
-    
-    /// The inner height of the editor div.
-    /// Fetches it from JS every time, so might be slow!
-    private func getClientHeight(handler: @escaping (Int) -> Void) {
-        runJS("document.getElementById('editor').clientHeight") { r in
-            if let r = Int(r) {
-                handler(r)
-            } else {
-                handler(0)
-            }
-        }
-    }
-    
-    public func getHtml(handler: @escaping (String) -> Void) {
-        runJS("RE.getHtml()") { r in
-            handler(r)
-        }
-    }
-    
-    /// Text representation of the data that has been input into the editor view, if it has been loaded.
-    public func getText(handler: @escaping (String) -> Void) {
-        runJS("RE.getText()") { r in
-            handler(r)
-        }
-    }
-    
-    /// Returns selected text
-    public func getSelectedText(handler: @escaping (String?) -> Void) {
-        self.runJS("RE.selectedText()") { r in handler(r) }
-    }
-    
+
+
     /// The href of the current selection, if the current selection's parent is an anchor tag.
     /// Will be nil if there is no href, or it is an empty string.
-    public func getSelectedHref(handler: @escaping (String?) -> Void) {
-        hasRangeSelection(handler: { r in
-            if !r {
-                handler("")
-            } else {
-                self.runJS("RE.getSelectedHref()") { a in
-                    handler(a)
-                }
-            }
-        })
+    public var selectedHref: String? {
+        if !hasRangeSelection { return nil }
+        let href = runJS("RE.getSelectedHref();")
+        if href == "" {
+            return nil
+        } else {
+            return href
+        }
     }
-    
+
     /// Whether or not the selection has a type specifically of "Range".
-    public func hasRangeSelection(handler: @escaping (Bool) -> Void) {
-        runJS("RE.rangeSelectionExists()") { r in
-            handler(r == "true")
-        }
+    public var hasRangeSelection: Bool {
+        return runJS("RE.rangeSelectionExists();") == "true" ? true : false
     }
-    
+
     /// Whether or not the selection has a type specifically of "Range" or "Caret".
-    public func hasRangeOrCaretSelection(handler: @escaping (Bool) -> Void) {
-        runJS("RE.rangeOrCaretSelectionExists()") { r in
-            handler(r == "true")
-        }
+    public var hasRangeOrCaretSelection: Bool {
+        return runJS("RE.rangeOrCaretSelectionExists();") == "true" ? true : false
     }
-    
+
     // MARK: Methods
-    
+
     public func removeFormat() {
-        runJS("RE.removeFormat()")
+        runJS("RE.removeFormat();")
     }
     
     public func setFontSize(_ size: Int) {
-        runJS("RE.setFontSize('\(size)px')")
+        runJS("RE.setFontSize('\(size)px');")
     }
     
     public func setEditorBackgroundColor(_ color: UIColor) {
-        runJS("RE.setBackgroundColor('\(color.hex)')")
+        runJS("RE.setBackgroundColor('\(color.hex)');")
     }
     
     public func undo() {
-        runJS("RE.undo()")
+        runJS("RE.undo();")
     }
     
     public func redo() {
-        runJS("RE.redo()")
+        runJS("RE.redo();")
     }
     
     public func bold() {
-        runJS("RE.setBold()")
+        runJS("RE.setBold();")
     }
     
     public func italic() {
-        runJS("RE.setItalic()")
+        runJS("RE.setItalic();")
     }
     
+    // "superscript" is a keyword
     public func subscriptText() {
-        runJS("RE.setSubscript()")
+        runJS("RE.setSubscript();")
     }
     
     public func superscript() {
-        runJS("RE.setSuperscript()")
+        runJS("RE.setSuperscript();")
     }
     
     public func strikethrough() {
-        runJS("RE.setStrikeThrough()")
+        runJS("RE.setStrikeThrough();")
     }
     
     public func underline() {
-        runJS("RE.setUnderline()")
+        runJS("RE.setUnderline();")
     }
     
     public func setTextColor(_ color: UIColor) {
-        runJS("RE.prepareInsert()")
-        runJS("RE.setTextColor('\(color.hex)')")
+        runJS("RE.prepareInsert();")
+        runJS("RE.setTextColor('\(color.hex)');")
     }
     
     public func setEditorFontColor(_ color: UIColor) {
-        runJS("RE.setBaseTextColor('\(color.hex)')")
+        runJS("RE.setBaseTextColor('\(color.hex)');")
     }
     
     public func setTextBackgroundColor(_ color: UIColor) {
-        runJS("RE.prepareInsert()")
-        runJS("RE.setTextBackgroundColor('\(color.hex)')")
+        runJS("RE.prepareInsert();")
+        runJS("RE.setTextBackgroundColor('\(color.hex)');")
     }
     
     public func header(_ h: Int) {
-        runJS("RE.setHeading('\(h)')")
+        runJS("RE.setHeading('\(h)');")
     }
-    
+
     public func indent() {
-        runJS("RE.setIndent()")
+        runJS("RE.setIndent();")
     }
-    
+
     public func outdent() {
-        runJS("RE.setOutdent()")
+        runJS("RE.setOutdent();")
     }
-    
+
     public func orderedList() {
-        runJS("RE.setOrderedList()")
+        runJS("RE.setOrderedList();")
     }
-    
+
     public func unorderedList() {
-        runJS("RE.setUnorderedList()")
+        runJS("RE.setUnorderedList();")
     }
-    
+
     public func blockquote() {
         runJS("RE.setBlockquote()");
     }
     
     public func alignLeft() {
-        runJS("RE.setJustifyLeft()")
+        runJS("RE.setJustifyLeft();")
     }
     
     public func alignCenter() {
-        runJS("RE.setJustifyCenter()")
+        runJS("RE.setJustifyCenter();")
     }
     
     public func alignRight() {
-        runJS("RE.setJustifyRight()")
+        runJS("RE.setJustifyRight();")
     }
-    
-    public func checkbox() {
-        runJS("RE.setCheckbox('\(UUID().uuidString.prefix(8))')")
-    }
-    
-    // Offline mode determines how to handle insertImage
-    var offline = true
     
     public func insertImage(_ url: String, alt: String) {
-        runJS("RE.prepareInsert()")
-        runJS("RE.insertImage('\(url.escaped)', '\(alt.escaped)')")
+        runJS("RE.prepareInsert();")
+        runJS("RE.insertImage('\(url.escaped)', '\(alt.escaped)');")
     }
-
-    public func insertVideo(vidURL: String, posterURL: String="", isBase64: Bool=false) {
-            // Remember, both poster and src can be base64 encoded
-            runJS("RE.prepareInsert()")
-            var theJS: String
-            if offline == true {
-                // Assuming vidURL already in base64
-                theJS = "<div><video class='video-js' controls preload='auto'  data-setup='{}'><source src='\(vidURL)'></source></video></div>"
-            } else {
-                // Upload to server the base64 if isBase64 == true. Utilize the IDs and Video tags to your advantage. On Python web server, I use BeautifulSoup4. Use the base64 to save video in S3 and replace src with your new S3 video. Or you could just save in database.
-                let uuid = UUID().uuidString
-                theJS = "<div><video \(isBase64 ? "id='"+uuid+"'":"") class='video-js' controls preload='auto' data-setup='{}'><source src='\(vidURL)\(isBase64 ? "":"#t=0.01")'></source></video></div>"
-                // The time at the end is so that we can grab a thumbnail IF it's a link
-            }
-            runJS("RE.insertHTML('\(theJS.escaped)')")
-        }
     
-    public func insertLink(href: String, text: String, title: String = "") {
-        runJS("RE.prepareInsert()")
-        runJS("RE.insertLink('\(href.escaped)', '\(text.escaped)', '\(title.escaped)')")
+    public func insertLink(_ href: String, title: String) {
+        runJS("RE.prepareInsert();")
+        runJS("RE.insertLink('\(href.escaped)', '\(title.escaped)');")
     }
     
     public func focus() {
-        runJS("RE.focus()")
+        runJS("RE.focus();")
     }
-    
+
     public func focus(at: CGPoint) {
-        runJS("RE.focusAtPoint(\(at.x), \(at.y))")
+        runJS("RE.focusAtPoint(\(at.x), \(at.y));")
     }
     
     public func blur() {
         runJS("RE.blurFocus()")
-    }
-    
-    public func setCheckbox() {
-        runJS("RE.setCheckbox('\(UUID().uuidString.prefix(8))')")
-    }
-    
-    // MARK: Table functionalities
-    public func insertTable(width: Int = 2, height: Int = 2) {
-        runJS("RE.prepareInsert()")
-        runJS("RE.insertTable(\(width), \(height))")
-    }
-    
-    /// Checks if cursor is in a table element. If so, return true so that you can add menu items accordingly.
-    public func isCursorInTable(handler: @escaping (Bool) -> Void) {
-        runJS("RE.isCursorInTable") { r in
-            handler(r == "true")
-        }
-    }
-
-    public func addRowToTable() {
-        runJS("RE.addRowToTable()")
-    }
-
-    public func deleteColumnFromTable() {
-        runJS("RE.addRowToTable()")
     }
 
     /// Runs some JavaScript on the WKWebView and returns the result
     /// If there is no result, returns an empty string
     /// - parameter js: The JavaScript string to be run
     /// - returns: The result of the JavaScript that was run
-    public func runJS(_ js: String, handler: ((String) -> Void)? = nil) {
-        webView.evaluateJavaScript(js) {(result, error) in
-            if let error = error {
-                print("WKWebViewJavascriptBridge Error: \(String(describing: error)) - JS: \(js)")
-                handler?("")
-                return
+    @discardableResult
+    public func runJS(_ js: String) -> String {
+        var evaluation = ""
+        webView.evaluate(script: js) { (result, error) in
+            if let result = result {
+                if let value = result as? String {
+                    evaluation = value
+                } else {
+                    evaluation = String(describing: result)
+                }
             }
-            
-            guard let handler = handler else { return }
-            if let resultBool = result as? Bool {
-                handler(resultBool ? "true" : "false")
-                return
-            }
-            if let resultInt = result as? Int {
-                handler("\(resultInt)")
-                return
-            }
-            if let resultStr = result as? String {
-                handler(resultStr)
-                return
-            }
-            handler("") // no result
         }
+        return evaluation
     }
-    
+
+
     // MARK: - Delegate Methods
-    
+
+
     // MARK: UIScrollViewDelegate
-    
+
     public func scrollViewDidScroll(_ scrollView: UIScrollView) {
         // We use this to keep the scroll view from changing its offset when the keyboard comes up
         if !isScrollEnabled {
             scrollView.bounds = webView.bounds
         }
     }
-    
-    // MARK: WKWebViewDelegate
-    
-    public func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {}
-    
-    public func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
-        // Handle pre-defined editor actions
-        let callbackPrefix = "re-callback://"
-        if navigationAction.request.url?.absoluteString.hasPrefix(callbackPrefix) == true {
-            // When we get a callback, we need to fetch the command queue to run the commands
-            // It comes in as a JSON array of commands that we need to parse
-            runJS("RE.getCommandQueue()") { commands in
-                if let data = commands.data(using: .utf8) {
-                    let jsonCommands: [String]
-                    do {
-                        jsonCommands = try JSONSerialization.jsonObject(with: data) as? [String] ?? []
-                    } catch {
-                        jsonCommands = []
-                        NSLog("RichEditorView: Failed to parse JSON Commands")
-                    }
-                    jsonCommands.forEach(self.performCommand)
-                }
-            }
-            return decisionHandler(WKNavigationActionPolicy.cancel);
-        }
-        
-        // User is tapping on a link, so we should react accordingly
-        if navigationAction.navigationType == .linkActivated {
-            if let url = navigationAction.request.url {
-                if delegate?.richEditor?(self, shouldInteractWith: url) ?? false {
-                    return decisionHandler(WKNavigationActionPolicy.allow);
-                }
-            }
-        }
-        return decisionHandler(WKNavigationActionPolicy.allow);
-    }
-    
+
     // MARK: UIGestureRecognizerDelegate
-    
+
     /// Delegate method for our UITapGestureDelegate.
     /// Since the internal web view also has gesture recognizers, we have to make sure that we actually receive our taps.
     public func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool {
         return true
     }
-    
+
+
     // MARK: - Private Implementation Details
-    
-    private var contentEditable: Bool = false {
-        didSet {
-            editingEnabledVar = contentEditable
+
+    private var isContentEditable: Bool {
+        get {
             if isEditorLoaded {
-                let value = (contentEditable ? "true" : "false")
-                runJS("RE.editor.contentEditable = \(value)")
+                let value = runJS("RE.editor.isContentEditable")
+                editingEnabledVar = Bool(value) ?? false
+                return editingEnabledVar
             }
+            return editingEnabledVar
         }
-    }
-    private func isContentEditable(handler: @escaping (Bool) -> Void) {
-        if isEditorLoaded {
-            // to get the "editable" value is a different property, than to disable it
-            // https://developer.mozilla.org/en-US/docs/Web/API/HTMLElement/contentEditable
-            runJS("RE.editor.isContentEditable") { value in
-                self.editingEnabledVar = Bool(value) ?? false
+        set {
+            editingEnabledVar = newValue
+            if isEditorLoaded {
+                let value = newValue ? "true" : "false"
+                runJS("RE.editor.contentEditable = \(value);")
             }
         }
     }
@@ -524,55 +435,49 @@ public class RichEditorWebView: WKWebView {
     /// For example, if the cursor is directly at the top of what is visible, it will return 0.
     /// This also means that it will be negative if it is above what is currently visible.
     /// Can also return 0 if some sort of error occurs between JS and here.
-    private func relativeCaretYPosition(handler: @escaping (Int) -> Void) {
-        runJS("RE.getRelativeCaretYPosition()") { r in
-            handler(Int(r) ?? 0)
-        }
+    private var relativeCaretYPosition: Int {
+        let string = runJS("RE.getRelativeCaretYPosition();")
+        return Int(string) ?? 0
     }
-    
+
     private func updateHeight() {
-        runJS("document.getElementById('editor').clientHeight") { heightString in
-            let height = Int(heightString) ?? 0
-            if self.editorHeight != height {
-                self.editorHeight = height
-            }
+        let heightString = runJS("document.getElementById('editor').clientHeight;")
+        let height = Int(heightString) ?? 0
+        if editorHeight != height {
+            editorHeight = height
         }
     }
-    
+
     /// Scrolls the editor to a position where the caret is visible.
     /// Called repeatedly to make sure the caret is always visible when inputting text.
     /// Works only if the `lineHeight` of the editor is available.
     private func scrollCaretToVisible() {
-        let scrollView = self.webView.scrollView
+        let scrollView = webView.scrollView
         
-        getClientHeight(handler: { clientHeight in
-            let contentHeight = clientHeight > 0 ? CGFloat(clientHeight) : scrollView.frame.height
-            scrollView.contentSize = CGSize(width: scrollView.frame.width, height: contentHeight)
-            
-            // XXX: Maybe find a better way to get the cursor height
-            self.getLineHeight(handler: { lh in
-                let lineHeight = CGFloat(lh)
-                let cursorHeight = lineHeight - 4
-                self.relativeCaretYPosition(handler: { r in
-                    let visiblePosition = CGFloat(r)
-                    var offset: CGPoint?
-                    
-                    if visiblePosition + cursorHeight > scrollView.bounds.size.height {
-                        // Visible caret position goes further than our bounds
-                        offset = CGPoint(x: 0, y: (visiblePosition + lineHeight) - scrollView.bounds.height + scrollView.contentOffset.y)
-                    } else if visiblePosition < 0 {
-                        // Visible caret position is above what is currently visible
-                        var amount = scrollView.contentOffset.y + visiblePosition
-                        amount = amount < 0 ? 0 : amount
-                        offset = CGPoint(x: scrollView.contentOffset.x, y: amount)
-                    }
-                    
-                    if let offset = offset {
-                        scrollView.setContentOffset(offset, animated: true)
-                    }
-                })
-            })
-        })
+        let contentHeight = clientHeight > 0 ? CGFloat(clientHeight) : scrollView.frame.height
+        scrollView.contentSize = CGSize(width: scrollView.frame.width, height: contentHeight)
+        
+        // XXX: Maybe find a better way to get the cursor height
+        let lineHeight = CGFloat(self.lineHeight)
+        let cursorHeight = lineHeight - 4
+        let visiblePosition = CGFloat(relativeCaretYPosition)
+        var offset: CGPoint?
+
+        if visiblePosition + cursorHeight > scrollView.bounds.size.height {
+            // Visible caret position goes further than our bounds
+            offset = CGPoint(x: 0, y: (visiblePosition + lineHeight) - scrollView.bounds.height + scrollView.contentOffset.y)
+
+        } else if visiblePosition < 0 {
+            // Visible caret position is above what is currently visible
+            var amount = scrollView.contentOffset.y + visiblePosition
+            amount = amount < 0 ? 0 : amount
+            offset = CGPoint(x: scrollView.contentOffset.x, y: amount)
+
+        }
+
+        if let offset = offset {
+            scrollView.setContentOffset(offset, animated: true)
+        }
     }
     
     /// Called when actions are received from JavaScript
@@ -582,21 +487,32 @@ public class RichEditorWebView: WKWebView {
             // If loading for the first time, we have to set the content HTML to be displayed
             if !isEditorLoaded {
                 isEditorLoaded = true
-                setHTML(html)
-                contentHTML = html
-                contentEditable = editingEnabledVar
+                html = contentHTML
+                isContentEditable = editingEnabledVar
                 placeholder = placeholderText
-                lineHeight = DefaultInnerLineHeight
-                delegate?.richEditorDidLoad?(self)
+                lineHeight = innerLineHeight
+                let dispatchTime: DispatchTime
+                if #available(iOS 13.0, *) {
+                    dispatchTime = DispatchTime.now().advanced(by: DispatchTimeInterval.milliseconds(500))
+                    DispatchQueue.main.asyncAfter(deadline: dispatchTime) { [weak self] in
+                        guard let self = self else { return }
+                        self.delegate?.richEditorDidLoad?(self)
+                    }
+                } else {
+                    dispatchTime = DispatchTime.now() + 0.5
+                    DispatchQueue.main.asyncAfter(deadline: dispatchTime) { [weak self] in
+                        guard let self = self else { return }
+                        self.delegate?.richEditorDidLoad?(self)
+                    }
+                }
             }
             updateHeight()
         }
         else if method.hasPrefix("input") {
             scrollCaretToVisible()
-            runJS("RE.getHtml()") { content in
-                self.contentHTML = content
-                self.updateHeight()
-            }
+            let content = runJS("RE.getHtml()")
+            contentHTML = content
+            updateHeight()
         }
         else if method.hasPrefix("updateHeight") {
             updateHeight()
@@ -608,40 +524,80 @@ public class RichEditorWebView: WKWebView {
             delegate?.richEditorLostFocus?(self)
         }
         else if method.hasPrefix("action/") {
-            runJS("RE.getHtml()") { content in
-                self.contentHTML = content
-                
-                // If there are any custom actions being called
-                // We need to tell the delegate about it
-                let actionPrefix = "action/"
-                let range = method.range(of: actionPrefix)!
-                let action = method.replacingCharacters(in: range, with: "")
-                
-                self.delegate?.richEditor?(self, handle: action)
-            }
+            let content = runJS("RE.getHtml()")
+            contentHTML = content
+            
+            // If there are any custom actions being called
+            // We need to tell the delegate about it
+            let actionPrefix = "action/"
+            let range = method.range(of: actionPrefix)!
+            let action = method.replacingCharacters(in: range, with: "")
+            delegate?.richEditor?(self, handle: action)
         }
     }
-    
+
     // MARK: - Responder Handling
-    /// Called by the UITapGestureRecognizer when the user taps the view
-    /// If we are not already the first responder, focus the editor
+
+    /// Called by the UITapGestureRecognizer when the user taps the view.
+    /// If we are not already the first responder, focus the editor.
     @objc private func viewWasTapped() {
-        if !webView.isFirstResponder {
+        if !webView.containsFirstResponder {
             let point = tapRecognizer.location(in: webView)
             focus(at: point)
         }
     }
+
     override open func becomeFirstResponder() -> Bool {
-        if !webView.isFirstResponder {
+        if !webView.containsFirstResponder {
             focus()
             return true
         } else {
             return false
         }
     }
-    
+
     open override func resignFirstResponder() -> Bool {
         blur()
         return true
+    }
+
+}
+
+// MARK: WKNavigationDelegate
+extension RichEditorView: WKNavigationDelegate {
+    public func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+        // Handle pre-defined editor actions
+        let callbackPrefix = "re-callback://"
+        if navigationAction.request.url?.absoluteString.hasPrefix(callbackPrefix) == true {
+            // When we get a callback, we need to fetch the command queue to run the commands
+            // It comes in as a JSON array of commands that we need to parse
+            let commands = runJS("RE.getCommandQueue();")
+            if let data = commands.data(using: .utf8) {
+                let jsonCommands: [String]
+                do {
+                    jsonCommands = try JSONSerialization.jsonObject(with: data) as? [String] ?? []
+                } catch {
+                    jsonCommands = []
+                    NSLog("RichEditorView: Failed to parse JSON Commands")
+                }
+                jsonCommands.forEach(performCommand)
+            }
+            decisionHandler(.cancel)
+            return
+        } else if navigationAction.navigationType == .linkActivated {
+            // User is tapping on a link, so we should react accordingly
+            if let url = webView.url, let shouldInteract = delegate?.richEditor?(self, shouldInteractWith: url) {
+                let actionPolicy: WKNavigationActionPolicy = shouldInteract ? .allow : .cancel
+                decisionHandler(actionPolicy)
+            }
+        } else {
+            decisionHandler(.allow)
+        }
+    }
+    
+    public func webView(_ webView: WKWebView,
+                        didFail navigation: WKNavigation!,
+                        withError error: Error) {
+        print(error)
     }
 }
