@@ -84,7 +84,7 @@ import WebKit
 
     /// The internal height of the text being displayed.
     /// Is continually being updated as the text is edited.
-    open private(set) var editorHeight: Int = 0 {
+    open var editorHeight: Int = 100 {
         didSet {
             delegate?.richEditor?(self, heightDidChange: editorHeight)
         }
