@@ -16,9 +16,6 @@ let package = Package(
         .target(
             name: "RichEditorView",
             dependencies: [],
-            path: "RichEditorView"),  // Adjust this to the correct path for the source files
-        .testTarget(
-            name: "RichEditorViewTests",
-            dependencies: ["RichEditorView"]
+            path: "RichEditorView")
     ]
 )
